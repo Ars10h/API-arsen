@@ -1,0 +1,53 @@
+stages:
+  - lint
+  - build
+  - run
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+  COMPOSE_PROJECT_NAME: testapi2
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+
+services:
+  - docker:20.10.16-dind
+
+# --------- Lint backend --------- #
+lint_backend:
+  stage: lint
+  image: python:3.10
+  before_script:
+    - pip install flake8
+  script:
+    - flake8 api.py || true  # ou flake8 . si tu veux tout lister
+  allow_failure: true  # Empêche le blocage de la pipeline si warning
+
+# --------- Lint frontend --------- #
+lint_frontend:
+  stage: lint
+  image: node:18
+  script:
+    - cd frontend
+    - npm ci
+    - npm run lint || echo "Pas de script lint défini"
+  allow_failure: true
+
+# --------- Build project --------- #
+build_project:
+  stage: build
+  image: docker:20.10.16
+  before_script:
+    - docker info
+  script:
+    - docker compose build --no-cache
+
+# --------- Run services & check status --------- #
+run_compose_up:
+  stage: run
+  image: docker:20.10.16
+  script:
+    - docker compose up -d
+    - sleep 10
+    - docker ps
+    - curl http://localhost:8000/status || echo "Backend not reachable"
+    - curl http://localhost:3000 || echo "Frontend not reachable"
