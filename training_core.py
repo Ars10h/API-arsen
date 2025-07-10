@@ -1,4 +1,5 @@
 def federated_training(model_type="plain"):
+    # Import necessary libraries
     import torch
     import torch.nn as nn
     import torch.optim as optim
@@ -12,18 +13,20 @@ def federated_training(model_type="plain"):
     from sklearn.metrics import roc_auc_score, roc_curve
     from shared import update_progress, append_metric, get_progress
 
-    # Config
+    # Configuration for Federated Learning
     NUM_CLIENTS = 5
     NUM_ROUNDS = 20
     LOCAL_EPOCHS = 5
     BATCH_SIZE = 64
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
+    # Image transformations: convert to tensor and normalize
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
     ])
-
+    
+    # Load CIFAR-10 dataset
     trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
     testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
     test_loader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False)
@@ -34,6 +37,7 @@ def federated_training(model_type="plain"):
 
     client_indices = partition_dataset(trainset, NUM_CLIENTS)
 
+    # Define a simple CNN model for image classification
     class SimpleCNN(nn.Module):
         def __init__(self):
             super().__init__()
@@ -52,7 +56,7 @@ def federated_training(model_type="plain"):
         def forward(self, x):
             x = self.conv(x)
             return self.fc(x)
-
+    # Define an extended CNN model with Dropout layers for regularization
     class SimpleCNNWithDropout(SimpleCNN):
         def __init__(self):
             super().__init__()
@@ -60,6 +64,8 @@ def federated_training(model_type="plain"):
             self.conv.append(nn.Dropout(0.25))
             self.fc.insert(2, nn.Dropout(0.5))
 
+    # Local training function for a client's model
+    # If use_dp=True, applies differential privacy using Opacus
     def train_local(model, dataloader, epochs, use_dp=False):
         optimizer = optim.Adam(model.parameters(), lr=0.001)
         criterion = nn.CrossEntropyLoss()
@@ -87,6 +93,7 @@ def federated_training(model_type="plain"):
 
         return model._module.state_dict() if use_dp else model.state_dict()
 
+    # Federated averaging: compute average of all clients' weights
     def average_weights(weights):
         avg = copy.deepcopy(weights[0])
         for k in avg:
@@ -95,6 +102,7 @@ def federated_training(model_type="plain"):
             avg[k] /= len(weights)
         return avg
 
+    # Evaluate the model on a given DataLoader and return accuracy
     def evaluate_model(model, loader):
         model.eval()
         correct = 0
@@ -108,6 +116,8 @@ def federated_training(model_type="plain"):
                 correct += (pred == y).sum().item()
         return 100 * correct / total
 
+    # Collect features (softmax probs + loss) for MIA classifier
+    # 'label' indicates whether data is from training (1) or test (0) set
     def collect_mia_data(model, loader, label, max_samples=300):
         model.eval()
         feats, labels = [], []
@@ -125,23 +135,25 @@ def federated_training(model_type="plain"):
                     count += 1
         return feats, labels
 
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.metrics import roc_auc_score
-
+    # # Train a logistic regression model to simulate a Membership Inference Attack (MIA)
     def train_mia_classifier(X, y):
         clf = LogisticRegression(max_iter=1000)
         clf.fit(X, y)
         return clf
-
+    
+    # Set up model class based on user-specified model_type
+    # Update training status
     update_progress("total_rounds", NUM_ROUNDS)
     update_progress("status", "training")
     model_class = SimpleCNN if model_type == "plain" else SimpleCNNWithDropout if model_type == "dropout" else SimpleCNN
     use_dp = model_type == "dp"
 
+    # Create DataLoader for client 0 and for MIA evaluation
     global_model = model_class().to(DEVICE)
     client0_loader = torch.utils.data.DataLoader(torch.utils.data.Subset(trainset, client_indices[0]), batch_size=32, shuffle=True)
     mia_test_loader = torch.utils.data.DataLoader(testset, batch_size=32, shuffle=True)
 
+    # Main federated learning loop
     for rnd in range(NUM_ROUNDS):
         update_progress("current_round", rnd + 1)
         weights = []
@@ -150,25 +162,25 @@ def federated_training(model_type="plain"):
             local_model = copy.deepcopy(global_model).to(DEVICE)
             w = train_local(local_model, loader, LOCAL_EPOCHS, use_dp)
             weights.append(w)
-
+        # Aggregate client weights into the global model
         global_model.load_state_dict(average_weights(weights))
-
+        # Evaluate global model accuracy and log the result
         acc = evaluate_model(global_model, test_loader)
         append_metric("accuracy", acc)
-
+        # Collect data for MIA: training (client) vs. non-training (test set)
         fin, lin = collect_mia_data(global_model, client0_loader, 1)
         fout, lout = collect_mia_data(global_model, mia_test_loader, 0)
         X, y = np.array(fin + fout), np.array(lin + lout)
+        # Train MIA classifier and log its AUC score as privacy metric
         clf = train_mia_classifier(X, y)
         auc = roc_auc_score(y, clf.predict_proba(X)[:, 1])
         append_metric("mia_auc", auc * 100)
-
+    # Update training status after all rounds
     update_progress("status", "done")
-        # Sauvegarde des courbes après le dernier round
 
     rounds = list(range(1, NUM_ROUNDS + 1))
 
-    # Courbe Accuracy et MIA AUC
+    # Plot Accuracy and MIA AUC over training rounds
     plt.figure(figsize=(10, 5))
     plt.plot(rounds, get_progress()["accuracy"], marker='o', label="Test Accuracy (%)")
     plt.plot(rounds, get_progress()["mia_auc"], marker='x', label="MIA AUC (%)")
@@ -178,10 +190,10 @@ def federated_training(model_type="plain"):
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
-    plt.savefig("static/miacurve.png")  # <- Sauvegarde ici
+    plt.savefig("static/miacurve.png")
     plt.close()
 
-    # Courbe ROC (MIA finale)
+    # Plot final ROC curve for the MIA classifier
     y_scores = clf.predict_proba(X)[:, 1]
     fpr, tpr, _ = roc_curve(y, y_scores)
     auc = roc_auc_score(y, y_scores)
@@ -195,7 +207,8 @@ def federated_training(model_type="plain"):
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
-    plt.savefig("static/miaroc.png")  # <- Sauvegarde ici
+    plt.savefig("static/miaroc.png") 
     plt.close()
 
+    # Final message to indicate training completion
     update_progress("message", f"Training completed using {model_type} model.")
