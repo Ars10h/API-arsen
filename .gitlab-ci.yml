@@ -19,8 +19,8 @@ lint_backend:
   before_script:
     - pip install flake8
   script:
-    - flake8 api.py || true  # ou flake8 . si tu veux tout lister
-  allow_failure: true  # Empêche le blocage de la pipeline si warning
+    - flake8 api.py || true  
+  allow_failure: true  
 
 # --------- Lint frontend --------- #
 lint_frontend:
