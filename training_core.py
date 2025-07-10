@@ -1,4 +1,20 @@
 def federated_training(model_type="plain"):
+    """
+    Simulates Federated Learning with optional dropout or differential privacy.
+    
+    Args:
+        model_type (str): One of ['plain', 'dropout', 'dp']. Determines model configuration.
+    
+    Workflow:
+        - Distributes CIFAR-10 dataset among clients.
+        - Each client trains locally and sends weights.
+        - Server aggregates weights using FedAvg.
+        - Evaluates model accuracy and membership privacy risk (via MIA).
+        - Saves training metrics and plots.
+
+    Outputs:
+        Saves plots for accuracy and MIA AUC (miacurve.png), and ROC curve (miaroc.png).
+    """
     # Import necessary libraries
     import torch
     import torch.nn as nn
