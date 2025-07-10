@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from api import app  # <- Doit importer `app` depuis ton fichier api.py
+from api import app  
 
 
 # In-memory database (for demonstration purposes)
