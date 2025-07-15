@@ -2,8 +2,7 @@ stages:
   - lint
   - build
   - run
-tags:
-    - self-hosted
+
 variables:
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
@@ -17,6 +16,8 @@ services:
 lint_backend:
   stage: lint
   image: python:3.10
+  tags:
+    - selfhosted
   before_script:
     - pip install flake8
   script:
@@ -27,6 +28,8 @@ lint_backend:
 lint_frontend:
   stage: lint
   image: node:18
+  tags:
+    - selfhosted
   script:
     - cd frontend
     - npm ci
@@ -37,6 +40,8 @@ lint_frontend:
 build_project:
   stage: build
   image: docker:20.10.16
+  tags:
+    - selfhosted
   before_script:
     - docker info
   script:
@@ -46,6 +51,8 @@ build_project:
 run_compose_up:
   stage: run
   image: docker:20.10.16
+  tags:
+    - selfhosted
   script:
     - docker compose up -d
     - sleep 10
