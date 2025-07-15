@@ -2,7 +2,8 @@ stages:
   - lint
   - build
   - run
-
+tags:
+    - self-hosted
 variables:
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
